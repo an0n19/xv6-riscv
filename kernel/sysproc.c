@@ -91,3 +91,9 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_getppid(void) {
+    struct proc *p = myproc();  // Obtener el proceso actual
+    return p->parent->pid;      // Devolver el PID del proceso padre
+}

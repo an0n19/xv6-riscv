@@ -1,3 +1,4 @@
+//#include "/home/kali/xv6-riscv/user/user.h"
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
@@ -5,6 +6,9 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+
+
+
 
 struct cpu cpus[NCPU];
 
@@ -14,6 +18,15 @@ struct proc *initproc;
 
 int nextpid = 1;
 struct spinlock pid_lock;
+
+uint64
+getppid(void)
+{
+    struct proc *p = myproc();
+    if(p->parent)
+        return p->parent->pid;
+    return -1;
+}
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
@@ -25,6 +38,8 @@ extern char trampoline[]; // trampoline.S
 // memory model when using p->parent.
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
+
+
 
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
@@ -693,3 +708,7 @@ procdump(void)
     printf("\n");
   }
 }
+
+
+
+
