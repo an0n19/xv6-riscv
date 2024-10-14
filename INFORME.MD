@@ -5,4 +5,4 @@
 3. Modifiqué el MakeFile cosa de que leyera el codigo agregado
 4. Probe ejecutando QEMU y escribiendo yosoytupadre
 
-NOTA: Me guié de la materia de la clase + Chat GPT para orientarme, tuve algunos problemas debido a cambio de tipo de variables y posición donde declararlas, error más común fue el que no me reconocía getppid, cosa que gracias a la IA mencionada y mis apuntes pude corregir.
+NOTA: Me guié de la materia de la clase + Chat GPT para orientarme, tuve algunos problemas debido a cambio de tipo de variables y posición donde declararlas, error más común fue el que no me reconocía getppid, cosa que gracias a la IA mencionada y mis apuntes pude corregir.s
