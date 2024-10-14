@@ -1,4 +1,3 @@
-//#include "/home/kali/xv6-riscv/user/user.h"
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
@@ -6,18 +5,39 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+//#include "vm.c"
 
 
+struct {
+    struct spinlock lock;
+    struct proc proc[NPROC];
+} ptable;
 
+//struct cpu *c = mycpu();
+//extern struct proc *proc;  // Variable global para el proceso actual
+
+extern pagetable_t kernel_pagetable; 
 
 struct cpu cpus[NCPU];
+
+void ptableinit(void) {
+    initlock(&ptable.lock, "ptable");
+    for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+        p->state = UNUSED; // Inicializar todos los procesos como UNUSED
+    }
+}
+
 
 struct proc proc[NPROC];
 
 struct proc *initproc;
 
+
+
 int nextpid = 1;
 struct spinlock pid_lock;
+
+
 
 uint64
 getppid(void)
@@ -153,8 +173,10 @@ found:
     freeproc(p);
     release(&p->lock);
     return 0;
-  }
 
+  }
+  p->priority = 0;  // Inicializa la prioridad en 0
+  p->boost = 1;     // Inicializa el boost en 1
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -456,44 +478,92 @@ wait(uint64 addr)
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
-void
-scheduler(void)
-{
-  struct proc *p;
-  struct cpu *c = mycpu();
 
-  c->proc = 0;
-  for(;;){
-    // The most recent process to run may have had interrupts
-    // turned off; enable them to avoid a deadlock if all
-    // processes are waiting.
-    intr_on();
+// void
+// scheduler(void)
+// {
+//   struct proc *p;
+//   struct cpu *c = mycpu();
 
-    int found = 0;
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
+//   c->proc = 0;
+//   for(;;){
+//     // The most recent process to run may have had interrupts
+//     // turned off; enable them to avoid a deadlock if all
+//     // processes are waiting.
+//     intr_on();
 
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
-      }
-      release(&p->lock);
+//     int found = 0;
+//     for(p = proc; p < &proc[NPROC]; p++) {
+//       acquire(&p->lock);
+//       if(p->state == RUNNABLE) {
+//         // Switch to chosen process.  It is the process's job
+//         // to release its lock and then reacquire it
+//         // before jumping back to us.
+//         p->state = RUNNING;
+//         c->proc = p;
+//         swtch(&c->context, &p->context);
+
+//         // Process is done running for now.
+//         // It should have changed its p->state before coming back.
+//         c->proc = 0;
+//         found = 1;
+//       }
+//       release(&p->lock);
+//     }
+//     if(found == 0) {
+//       // nothing to run; stop running on this core until an interrupt.
+//       intr_on();
+//       asm volatile("wfi");
+//     }
+//   }
+// }
+
+void scheduler(void) {
+    struct proc *p;
+
+    for(;;) {
+        struct cpu *c = mycpu();  // Obtener la CPU actual dentro del bucle
+
+        intr_on();  // Habilitar las interrupciones
+
+        acquire(&ptable.lock);
+        for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+         {
+            printf("Proceso: %d, Estado: %d\n", p->pid, p->state);
+            if(p->state != RUNNABLE)
+                continue;
+
+            // Incrementar prioridad de los procesos que no sean zombies
+            p->priority += p->boost;
+
+            // Verificar los límites de prioridad y ajustar el boost
+            if (p->priority >= 9) {
+                p->boost = -1;  // Si llega a 9, reducir boost
+            } else if (p->priority <= 0) {
+                p->boost = 1;  // Si llega a 0, aumentar boost
+            }
+
+            // Cambiar a la tabla de páginas del proceso
+            w_satp(MAKE_SATP(p->pagetable));
+
+            // Sincronizar las tablas de páginas
+            sfence_vma();
+            p->state = RUNNING; //Marca proceso como en ejecucion
+
+            swtch(&c->context, &p->context);  // Cambiar contexto al proceso
+            // Volver a la tabla de páginas del kernel
+            w_satp(MAKE_SATP(kernel_pagetable));
+
+            // Sincronizar las tablas de páginas nuevamente
+            sfence_vma();
+
+            // El proceso deja de correr temporalmente
+        }
+        release(&ptable.lock);
     }
-    if(found == 0) {
-      // nothing to run; stop running on this core until an interrupt.
-      intr_on();
-      asm volatile("wfi");
-    }
-  }
 }
+
+
 
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores
