@@ -1,4 +1,8 @@
 uint64 getppid(void);
+void yield(void);
+void sched(void);
+
+
 
 
 // Saved registers for kernel context switches.

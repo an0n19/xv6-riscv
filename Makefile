@@ -140,7 +140,7 @@ UPROGS=\
 	$U/_wc\
 	$U/_zombie\
 	$U/_yosoytupadre\
-	$U/_fork_test\
+	$U/_test_priority\
 
 
 fs.img: mkfs/mkfs README $(UPROGS)

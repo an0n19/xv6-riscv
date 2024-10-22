@@ -14,6 +14,7 @@ struct {
 } ptable;
 
 //struct cpu *c = mycpu();
+struct context scheduler; // Definir el contexto del schedule
 //extern struct proc *proc;  // Variable global para el proceso actual
 
 extern pagetable_t kernel_pagetable; 
@@ -479,153 +480,66 @@ wait(uint64 addr)
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
 
-// void
-// scheduler(void)
-// {
-//   struct proc *p;
-//   struct cpu *c = mycpu();
-
-//   c->proc = 0;
-//   for(;;){
-//     // The most recent process to run may have had interrupts
-//     // turned off; enable them to avoid a deadlock if all
-//     // processes are waiting.
-//     intr_on();
-
-//     int found = 0;
-//     for(p = proc; p < &proc[NPROC]; p++) {
-//       acquire(&p->lock);
-//       if(p->state == RUNNABLE) {
-//         // Switch to chosen process.  It is the process's job
-//         // to release its lock and then reacquire it
-//         // before jumping back to us.
-//         p->state = RUNNING;
-//         c->proc = p;
-//         swtch(&c->context, &p->context);
-
-//         // Process is done running for now.
-//         // It should have changed its p->state before coming back.
-//         c->proc = 0;
-//         found = 1;
-//       }
-//       release(&p->lock);
-//     }
-//     if(found == 0) {
-//       // nothing to run; stop running on this core until an interrupt.
-//       intr_on();
-//       asm volatile("wfi");
-//     }
-//   }
-// }
-
 void scheduler(void) {
     struct proc *p;
 
-    for(;;) {
-        struct cpu *c = mycpu();  // Obtener la CPU actual dentro del bucle
+    for (;;) {
+        // Habilitar interrupciones
+        sti();
 
-        intr_on();  // Habilitar las interrupciones
-
-        acquire(&ptable.lock);
-        for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-         {
-            printf("Proceso: %d, Estado: %d\n", p->pid, p->state);
-            if(p->state != RUNNABLE)
-                continue;
-
-            // Incrementar prioridad de los procesos que no sean zombies
-            p->priority += p->boost;
-
-            // Verificar los límites de prioridad y ajustar el boost
-            if (p->priority >= 9) {
-                p->boost = -1;  // Si llega a 9, reducir boost
-            } else if (p->priority <= 0) {
-                p->boost = 1;  // Si llega a 0, aumentar boost
+        // Buscar el proceso con la mayor prioridad
+        struct proc *selected_proc = 0;
+        for (p = proc; p < &proc[NPROC]; p++) {
+            if (p->state == RUNNABLE) {
+                if (selected_proc == 0 || p->priority < selected_proc->priority) {
+                    selected_proc = p; // Seleccionar el proceso con menor prioridad
+                }
             }
-
-            // Cambiar a la tabla de páginas del proceso
-            w_satp(MAKE_SATP(p->pagetable));
-
-            // Sincronizar las tablas de páginas
-            sfence_vma();
-            p->state = RUNNING; //Marca proceso como en ejecucion
-
-            swtch(&c->context, &p->context);  // Cambiar contexto al proceso
-            // Volver a la tabla de páginas del kernel
-            w_satp(MAKE_SATP(kernel_pagetable));
-
-            // Sincronizar las tablas de páginas nuevamente
-            sfence_vma();
-
-            // El proceso deja de correr temporalmente
         }
-        release(&ptable.lock);
+
+        if (selected_proc) {
+            // Cambiar el estado y ejecutar el proceso seleccionado
+            selected_proc->state = RUNNING;
+            // Cambiar el contexto
+            switchuvm(selected_proc);
+            // Llamar a sched para cambiar el contexto
+            sched();
+        }
     }
 }
 
-
-
-// Switch to scheduler.  Must hold only p->lock
-// and have changed proc->state. Saves and restores
-// intena because intena is a property of this
-// kernel thread, not this CPU. It should
-// be proc->intena and proc->noff, but that would
-// break in the few places where a lock is held but
-// there's no process.
-void
-sched(void)
-{
-  int intena;
-  struct proc *p = myproc();
-
-  if(!holding(&p->lock))
-    panic("sched p->lock");
-  if(mycpu()->noff != 1)
-    panic("sched locks");
-  if(p->state == RUNNING)
-    panic("sched running");
-  if(intr_get())
-    panic("sched interruptible");
-
-  intena = mycpu()->intena;
-  swtch(&p->context, &mycpu()->context);
-  mycpu()->intena = intena;
-}
-
-// Give up the CPU for one scheduling round.
 void
 yield(void)
 {
-  struct proc *p = myproc();
-  acquire(&p->lock);
-  p->state = RUNNABLE;
-  sched();
-  release(&p->lock);
+    struct proc *p = myproc();
+    acquire(&p->lock);
+    p->state = RUNNABLE;
+    sched();  // Invoca al scheduler
+    release(&p->lock);
 }
-
-// A fork child's very first scheduling by scheduler()
-// will swtch to forkret.
+/// Sched: libera la CPU y cambia de proceso
 void
-forkret(void)
+sched(void)
 {
-  static int first = 1;
+    int intena;
+    struct proc *p = myproc();
 
-  // Still holding p->lock from scheduler.
-  release(&myproc()->lock);
+    if(!holding(&p->lock))
+        panic("sched p->lock");
+    if(cpu->noff != 1)
+        panic("sched locks");
+    if(p->state == RUNNING)
+        panic("sched running");
+    if(readeflags()&FL_IF)
+        panic("sched interruptible");
 
-  if (first) {
-    // File system initialization must be run in the context of a
-    // regular process (e.g., because it calls sleep), and thus cannot
-    // be run from main().
-    fsinit(ROOTDEV);
-
-    first = 0;
-    // ensure other cores see first=0.
-    __sync_synchronize();
-  }
-
-  usertrapret();
+    intena = cpu->intena;
+    swtch(&p->context, &cpu->scheduler);  // Cambia el contexto
+    cpu->intena = intena;
 }
+
+
+
 
 // Atomically release lock and sleep on chan.
 // Reacquires lock when awakened.
