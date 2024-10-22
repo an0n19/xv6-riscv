@@ -13,4 +13,4 @@ Hemos modificado el programador de procesos en xv6 para que los procesos se ejec
 4. **Pruebas**: Se creó un programa que genera 20 procesos y muestra cómo el sistema de prioridades los afecta.
 
 ## Dificultades encontradas
-- Tuvimos que ajustar cuidadosamente el cambio de prioridad para evitar que los procesos se estancaran con valores de boost incorrectos.
+- Al ayudarme de inteligencia artificial tuve algunos errores en el código, específicamente en proc.c, ya que no se me especificó mucho donde debían ir los cambios y me las ingenié para que funcionara, creo que logré lo solicitado.

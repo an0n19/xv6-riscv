@@ -1,3 +1,4 @@
+//#include "/home/kali/xv6-riscv/user/user.h"
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
@@ -5,40 +6,18 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
-//#include "vm.c"
 
 
-struct {
-    struct spinlock lock;
-    struct proc proc[NPROC];
-} ptable;
 
-//struct cpu *c = mycpu();
-struct context scheduler; // Definir el contexto del schedule
-//extern struct proc *proc;  // Variable global para el proceso actual
-
-extern pagetable_t kernel_pagetable; 
 
 struct cpu cpus[NCPU];
-
-void ptableinit(void) {
-    initlock(&ptable.lock, "ptable");
-    for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
-        p->state = UNUSED; // Inicializar todos los procesos como UNUSED
-    }
-}
-
 
 struct proc proc[NPROC];
 
 struct proc *initproc;
 
-
-
 int nextpid = 1;
 struct spinlock pid_lock;
-
-
 
 uint64
 getppid(void)
@@ -174,10 +153,8 @@ found:
     freeproc(p);
     release(&p->lock);
     return 0;
-
   }
-  p->priority = 0;  // Inicializa la prioridad en 0
-  p->boost = 1;     // Inicializa el boost en 1
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -479,67 +456,99 @@ wait(uint64 addr)
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
+void
+scheduler(void)
+{
+  struct proc *p;
+  struct cpu *c = mycpu();
 
-void scheduler(void) {
-    struct proc *p;
+  c->proc = 0;
+  for(;;){
+    // The most recent process to run may have had interrupts
+    // turned off; enable them to avoid a deadlock if all
+    // processes are waiting.
+    intr_on();
 
-    for (;;) {
-        // Habilitar interrupciones
-        sti();
-
-        // Buscar el proceso con la mayor prioridad
-        struct proc *selected_proc = 0;
-        for (p = proc; p < &proc[NPROC]; p++) {
-            if (p->state == RUNNABLE) {
-                if (selected_proc == 0 || p->priority < selected_proc->priority) {
-                    selected_proc = p; // Seleccionar el proceso con menor prioridad
+    int found = 0;
+        for(p = proc; p < &proc[NPROC]; p++) {
+            if(p->state == RUNNABLE) {
+                p->priority += p->boost;
+                if(p->priority >= 9) {
+                    p->boost = -1; // Cambiar boost a -1
+                } else if(p->priority <= 0) {
+                    p->boost = 1;  // Cambiar boost a 1
                 }
             }
         }
-
-        if (selected_proc) {
-            // Cambiar el estado y ejecutar el proceso seleccionado
-            selected_proc->state = RUNNING;
-            // Cambiar el contexto
-            switchuvm(selected_proc);
-            // Llamar a sched para cambiar el contexto
-            sched();
-        }
+    if(found == 0) {
+      // nothing to run; stop running on this core until an interrupt.
+      intr_on();
+      asm volatile("wfi");
     }
+  }
 }
 
-void
-yield(void)
-{
-    struct proc *p = myproc();
-    acquire(&p->lock);
-    p->state = RUNNABLE;
-    sched();  // Invoca al scheduler
-    release(&p->lock);
-}
-/// Sched: libera la CPU y cambia de proceso
+// Switch to scheduler.  Must hold only p->lock
+// and have changed proc->state. Saves and restores
+// intena because intena is a property of this
+// kernel thread, not this CPU. It should
+// be proc->intena and proc->noff, but that would
+// break in the few places where a lock is held but
+// there's no process.
 void
 sched(void)
 {
-    int intena;
-    struct proc *p = myproc();
+  int intena;
+  struct proc *p = myproc();
 
-    if(!holding(&p->lock))
-        panic("sched p->lock");
-    if(cpu->noff != 1)
-        panic("sched locks");
-    if(p->state == RUNNING)
-        panic("sched running");
-    if(readeflags()&FL_IF)
-        panic("sched interruptible");
+  if(!holding(&p->lock))
+    panic("sched p->lock");
+  if(mycpu()->noff != 1)
+    panic("sched locks");
+  if(p->state == RUNNING)
+    panic("sched running");
+  if(intr_get())
+    panic("sched interruptible");
 
-    intena = cpu->intena;
-    swtch(&p->context, &cpu->scheduler);  // Cambia el contexto
-    cpu->intena = intena;
+  intena = mycpu()->intena;
+  swtch(&p->context, &mycpu()->context);
+  mycpu()->intena = intena;
 }
 
+// Give up the CPU for one scheduling round.
+void
+yield(void)
+{
+  struct proc *p = myproc();
+  acquire(&p->lock);
+  p->state = RUNNABLE;
+  sched();
+  release(&p->lock);
+}
 
+// A fork child's very first scheduling by scheduler()
+// will swtch to forkret.
+void
+forkret(void)
+{
+  static int first = 1;
 
+  // Still holding p->lock from scheduler.
+  release(&myproc()->lock);
+
+  if (first) {
+    // File system initialization must be run in the context of a
+    // regular process (e.g., because it calls sleep), and thus cannot
+    // be run from main().
+    fsinit(ROOTDEV);
+
+    first = 0;
+    // ensure other cores see first=0.
+    __sync_synchronize();
+  }
+
+  usertrapret();
+}
 
 // Atomically release lock and sleep on chan.
 // Reacquires lock when awakened.
@@ -692,7 +701,3 @@ procdump(void)
     printf("\n");
   }
 }
-
-
-
-
