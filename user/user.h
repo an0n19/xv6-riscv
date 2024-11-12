@@ -43,3 +43,7 @@ void* malloc(uint);
 void free(void*);
 
 int getppid(void); 
+
+// user.h
+int mprotect(void *addr, int len);
+int munprotect(void *addr, int len);

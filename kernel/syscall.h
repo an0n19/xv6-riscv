@@ -21,5 +21,8 @@
 #define SYS_mkdir  20
 #define SYS_close  21
 #define SYS_getppid 22 //Agregamos
+#define SYS_mprotect 23  
+#define SYS_munprotect 24
+
 
 //uint64 sys_getppid(void);

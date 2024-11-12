@@ -1,4 +1,5 @@
 //#include "/home/kali/xv6-riscv/user/user.h"
+//#include "mmu.h"
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
@@ -6,7 +7,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
-
+#include <stdint.h>
 
 
 
@@ -30,6 +31,61 @@ getppid(void)
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
+
+
+// Función auxiliar para obtener un puntero a la entrada de tabla de páginas (PTE) para una dirección dada
+pte_t* get_pte(pagetable_t pagetable, uint64 va) {
+    if (va >= MAXVA) {
+        return 0;
+    }
+
+    pte_t *pte;
+    for (int level = 2; level > 0; level--) {
+        pte = &pagetable[PX(level, va)];
+        if (*pte & PTE_V) {
+            pagetable = (pagetable_t)PTE2PA(*pte);
+        } else {
+            return 0;
+        }
+    }
+    return &pagetable[PX(0, va)];
+}
+
+int mprotect(void *addr, int len) {
+    if (((uintptr_t)addr % PGSIZE) != 0 || len <= 0) return -1;
+
+    struct proc *p = myproc();
+    pde_t *pgdir = p->pagetable;
+    uint num_pages = (len + PGSIZE - 1) / PGSIZE;
+
+    for (uint i = 0; i < num_pages; i++) {
+        pte_t *pte = get_pte(pgdir, (uint64)addr + i * PGSIZE);
+        if (!pte || !(*pte & PTE_V)) return -1;
+
+        *pte &= ~PTE_W;
+    }
+
+    sfence_vma();
+    return 0;
+}
+
+int munprotect(void *addr, int len) {
+    if (((uintptr_t)addr % PGSIZE) != 0 || len <= 0) return -1;
+
+    struct proc *p = myproc();
+    pde_t *pgdir = p->pagetable;
+    uint num_pages = (len + PGSIZE - 1) / PGSIZE;
+
+    for (uint i = 0; i < num_pages; i++) {
+        pte_t *pte = get_pte(pgdir, (uint64)addr + i * PGSIZE);
+        if (!pte || !(*pte & PTE_V)) return -1;
+
+        *pte |= PTE_W;
+    }
+
+    sfence_vma();
+    return 0;
+}
 
 extern char trampoline[]; // trampoline.S
 

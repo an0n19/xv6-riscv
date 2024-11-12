@@ -5,6 +5,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+//#include "/home/kali/xv6-riscv/user/user.h"
 
 uint64
 sys_exit(void)
@@ -96,4 +97,34 @@ uint64
 sys_getppid(void) {
     struct proc *p = myproc();  // Obtener el proceso actual
     return p->parent->pid;      // Devolver el PID del proceso padre
+}
+
+int sys_mprotect(void) {
+    void *addr;
+    int len;  // Asegúrate de que len sea de tipo int
+
+    // Cambiar `&addr` a `(void**)&addr` para pasar correctamente el tipo esperado
+    if (argptr(0, &addr, sizeof(addr)) < 0)
+            return -1;
+        
+        // Asegúrate de pasar la dirección de `len` correctamente
+        if (argint(1, &len) < 0)
+            return -1;
+        
+        return sys_mprotect(addr, len);  // Llamar a sys_mprotect, no a mprotect
+}
+
+int sys_munprotect(void) {
+    void *addr;
+    int len;
+
+    // Cambiar `&addr` a `(void**)&addr` para pasar correctamente el tipo esperado
+    if (argptr(0, &addr, sizeof(addr)) < 0)
+        return -1;
+    
+    // Asegúrate de pasar la dirección de `len` correctamente
+    if (argint(1, &len) < 0)
+        return -1;
+    
+    return sys_munprotect(addr, len);  // Llamar a sys_munprotect, no a munprotect
 }

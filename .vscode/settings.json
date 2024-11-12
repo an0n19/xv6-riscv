@@ -1,6 +1,8 @@
 {
     "files.associations": {
         "user.h": "c",
-        "spinlock.h": "c"
-    }
+        "spinlock.h": "c",
+        "param.h": "c"
+    },
+    "C_Cpp.errorSquiggles": "disabled"
 }
